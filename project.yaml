@@ -1,104 +1,36 @@
 name: drc
 description: null
 collections: null
+credentials:
+  admin@example.org-DHIS2:
+    name: DHIS2
+    owner: admin@example.org
+  admin@example.org-OpenMRS:
+    name: OpenMRS
+    owner: admin@example.org
 workflows:
-  Copy-of-Scheduled-Workflow:
-    name: Copy of Scheduled Workflow
+  HIV-Stages-Report-to-DHIS2-Workflow:
+    name: HIV Stages Report to DHIS2 Workflow
     jobs:
       Get-Report-Data:
         name: Get Report Data
         adaptor: '@openfn/language-openmrs@5.0.2'
+        credential: admin@example.org-OpenMRS
+        body:
+          path: ./workflows/reports-data-upload-workflow/jobs/get-report-data.js
+      Generate-DHIS2-Payload:
+        name: Generate DHIS2 Payload
+        adaptor: '@openfn/language-common@2.4.0'
         credential: null
-        body: |
+        body:
+          path: ./workflows/reports-data-upload-workflow/jobs/generate-dhis2-payload.js
           
-          function mapReportData(reportData) {
-            // Get all rows from the first dataset
-            const rows = reportData.dataSets[0].rows;
-            
-            // Map each row to its key-size pairs
-            return rows.map(row => {
-              const sizeMap = {};
-              
-              // Iterate through each key-value pair in the row
-              Object.entries(row).forEach(([key, data]) => {
-                sizeMap[key] = data.size;
-              });
-              
-              return sizeMap;
-            });
-          }
-          
-          get("reportingrest/reportdata/27b977d2-02bf-4ef9-b512-9b9c495962b8",{ startDate: "2025-05-01", endDate: "2025-05-31" });
-          
-          fn(state => {
-            state.data = state.data.map(mapReportData)[0]
-            return state;
-          });
-          
-          
-          
-          
-          
-          
-          
-      Create-DHIS2-Payload:
-        name: Create DHIS2 Payload
-        adaptor: '@openfn/language-common@latest'
-        credential: null
-        body: |
-          function generatePayload(reportData) {
-            const { catAttrCombo, period, orgUnit, hivStagesReportMapping } = {
-              "catAttrCombo":"HllvX50cXC0",
-              "period":"202504",
-              "orgUnit":"drsiURo4DeK",
-              "hivStagesReportMapping":  {
-                  "Rapport sur les stades 3 et 4 du VIH en RDC.Mâles": "IQTe97w6j5I",
-                  "Rapport sur les stades 3 et 4 du VIH en RDC.Femmes": "b31fxPyPHdZ",
-                  "Rapport sur les stades 3 et 4 du VIH en RDC.Tout": "XMQfwO0ODSr",
-                  "Rapport sur les stades 3 et 4 du VIH en RDC.Moins de 1 an": "Yz7m8AH66in",
-                  "Rapport sur les stades 3 et 4 du VIH en RDC.1 à 4 ans": "Ius3vNNYVKm",
-                  "Rapport sur les stades 3 et 4 du VIH en RDC.5 à 9 ans": "xNtnllzbIGc",
-                  "Rapport sur les stades 3 et 4 du VIH en RDC.10 à 14 ans": "rmBvQxaGg5f",
-                  "Rapport sur les stades 3 et 4 du VIH en RDC.15 à 19 ans": "hbNT17TWRYF",
-                  "Rapport sur les stades 3 et 4 du VIH en RDC.20 à 24 ans": "xgycWMkqpHn",
-                  "Rapport sur les stades 3 et 4 du VIH en RDC.25 à 49 ans": "IDkk0WXXMQn",
-                  "Rapport sur les stades 3 et 4 du VIH en RDC.50 ans et plus": "hehguNKaht5"
-                }
-              
-              };
-            
-            // Create the base payload structure
-            const payload = {
-              dataSet: "necyFYLlEI0", // You might want to make this configurable
-              period: period,
-              orgUnit: orgUnit,
-              dataValues: []
-            };
-          
-            // Map each key-value pair from reportData to a dataValue object
-            Object.entries(reportData).forEach(([key, value]) => {
-              payload.dataValues.push({
-                dataElement: hivStagesReportMapping[key],
-                period: period,
-                orgUnit: orgUnit,
-                categoryOptionCombo: catAttrCombo,
-                attributeOptionCombo: catAttrCombo,
-                value: value.toString()
-              });
-            });
-          
-            return payload;
-          }
-          fn(state => {
-            state.payload = state.data.map(generatePayload)[0]
-            return state;
-          });
-      Sync-DHIS-2-Payload:
-        name: Sync DHIS 2 Payload
+      Upload-To-DHIS2:
+        name: Upload to DHIS2
         adaptor: '@openfn/language-dhis2@6.3.4'
-        credential: null
-        body: |
-          create("dataValueSets", (state) => (state.payload));
+        credential: admin@example.org-DHIS2
+        body:
+          path: ./workflows/reports-data-upload-workflow/jobs/upload-to-dhis2.js
           
     triggers:
       webhook:
@@ -110,13 +42,13 @@ workflows:
         target_job: Get-Report-Data
         condition_type: always
         enabled: true
-      Get-Report-Data->Create-DHIS2-Payload:
+      Get-Report-Data->Generate-DHIS2-Payload:
         source_job: Get-Report-Data
-        target_job: Create-DHIS2-Payload
+        target_job: Generate-DHIS2-Payload
         condition_type: on_job_success
         enabled: true
-      Create-DHIS2-Payload->Sync-DHIS-2-Payload:
-        source_job: Create-DHIS2-Payload
-        target_job: Sync-DHIS-2-Payload
+      Generate-DHIS2-Payload->Upload-To-DHIS2:
+        source_job: Generate-DHIS2-Payload
+        target_job: Upload-To-DHIS2
         condition_type: on_job_success
         enabled: true
